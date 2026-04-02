@@ -1,64 +1,104 @@
 pipeline {
     agent any
 
-    tools {
-        jdk 'jdk17'
-        maven 'maven3'
-    }
-
     environment {
-        IMAGE_NAME = "surya8442/zepto"
-        TAG = "latest"
-        CONTAINER_NAME = "zepto-container"
+        SONARQUBE_ENV = 'sq'
+        DOCKER_IMAGE = "surya8442/zepto"
+        AWS_CREDS = credentials('aws-creds')
+        AWS_DEFAULT_REGION = 'us-east-1'
+        RECIPIENTS = 'surya8442@gmail.com'
     }
 
     stages {
 
-        stage('Checkout') {
+        stage('Clone Repository') {
             steps {
                 git branch: 'main', url: 'https://github.com/Surya8442/zepto.git'
             }
         }
 
-        stage('Build') {
+        stage('Build Maven') {
             steps {
-                sh 'mvn clean package'
+                sh 'mvn clean package -DskipTests'
             }
         }
 
-        stage('SonarQube') {
+        stage('Jenkins to Nexus') {
             steps {
-                withSonarQubeEnv('sq') {
+                withMaven(jdk: 'jdk17', maven: 'maven3', traceability: true) {
+                    sh 'mvn deploy'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            steps {
+                withSonarQubeEnv("${SONARQUBE_ENV}") {
                     sh 'mvn sonar:sonar'
                 }
             }
         }
 
-        stage('Docker Build') {
+        stage('Quality Gate') {
             steps {
-                sh 'docker build -t $IMAGE_NAME:$TAG .'
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
             }
         }
 
-        stage('Docker Push') {
+        stage('Build Docker Image') {
             steps {
-                withCredentials([string(credentialsId: 'Docker_cred', variable: 'TOKEN')]) {
+                sh 'docker build -t $DOCKER_IMAGE:latest .'
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                withCredentials([usernamePassword(
+                    credentialsId: 'dockerhub-cred',
+                    usernameVariable: 'USER',
+                    passwordVariable: 'PASS'
+                )]) {
                     sh '''
-                    docker login -u surya8442 -p $TOKEN
-                    docker push $IMAGE_NAME:$TAG
+                    echo $PASS | docker login -u $USER --password-stdin
+                    docker push $DOCKER_IMAGE:latest
+                    docker logout
                     '''
                 }
             }
         }
 
-        stage('Deploy') {
+        stage('Deploy to EKS') {
             steps {
                 sh '''
-                docker stop $CONTAINER_NAME || true
-                docker rm $CONTAINER_NAME || true
-                docker run -d -p 8082:8080 --name $CONTAINER_NAME $IMAGE_NAME:$TAG
+                export AWS_ACCESS_KEY_ID=$AWS_CREDS_USR
+                export AWS_SECRET_ACCESS_KEY=$AWS_CREDS_PSW
+
+                aws eks update-kubeconfig --region us-east-1 --name mycluster
+                kubectl apply -f deployment.yml
+                kubectl apply -f service.yml
                 '''
             }
+        }
+    }
+
+    post {
+
+        success {
+            emailext(
+                subject: "Jenkins Job '${env.JOB_NAME}' SUCCESS",
+                body: "Good news! Job '${env.JOB_NAME}' (#${env.BUILD_NUMBER}) succeeded.\n\nCheck console: ${env.BUILD_URL}",
+                to: "${RECIPIENTS}"
+            )
+        }
+
+        failure {
+            emailext(
+                subject: "Jenkins Job '${env.JOB_NAME}' FAILED",
+                body: "Alert! Job '${env.JOB_NAME}' (#${env.BUILD_NUMBER}) failed.\n\nCheck console: ${env.BUILD_URL}",
+                to: "${RECIPIENTS}"
+            )
         }
     }
 }
