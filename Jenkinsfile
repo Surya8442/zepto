@@ -15,7 +15,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git 'https://github.com/Surya8442/zepto-app.git'
+                git 'https://github.com/Surya8442/zepto.git'
             }
         }
 
