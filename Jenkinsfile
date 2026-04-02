@@ -22,10 +22,10 @@ pipeline {
             }
         }
 
-        stage('Jenkins to Nexus') {
+        stage('Deploy to Nexus') {
             steps {
-                withMaven(jdk: 'jdk21', maven: 'maven3', traceability: true) {
-                    sh 'mvn deploy'
+                withCredentials([usernamePassword(credentialsId: 'nexus-cred', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
+                    sh 'mvn deploy -Dnexus.username=$NEXUS_USER -Dnexus.password=$NEXUS_PASS'
                 }
             }
         }
@@ -72,10 +72,10 @@ pipeline {
             steps {
                 sh '''
                     export KUBECONFIG=/var/lib/jenkins/.kube/config
+                    aws eks update-kubeconfig --region us-east-1 --name mycluster
                     kubectl get nodes
-                aws eks update-kubeconfig --region us-east-1 --name mycluster
-                kubectl apply -f deployment.yml
-                kubectl apply -f service.yml
+                    kubectl apply -f deployment.yml
+                    kubectl apply -f service.yml
                 '''
             }
         }
