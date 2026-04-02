@@ -16,7 +16,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git 'https://github.com/Surya8442/zepto.git'
+                git branch: 'main', url: 'https://github.com/Surya8442/zepto.git'
             }
         }
 
