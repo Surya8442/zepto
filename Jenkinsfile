@@ -1,5 +1,4 @@
 pipeline {
-
     agent any
 
     tools {
@@ -8,7 +7,9 @@ pipeline {
     }
 
     environment {
-        DOCKER_IMAGE = "surya8442/zepto-app"
+        IMAGE_NAME = "surya8442/zepto"
+        TAG = "latest"
+        CONTAINER_NAME = "zepto-container"
     }
 
     stages {
@@ -25,29 +26,38 @@ pipeline {
             }
         }
 
-        stage('Test Coverage') {
+        stage('SonarQube') {
             steps {
-                sh 'mvn test'
-            }
-        }
-
-        stage('SonarQube Scan') {
-            steps {
-                withSonarQubeEnv('sonar-server') {
+                withSonarQubeEnv('sq') {
                     sh 'mvn sonar:sonar'
                 }
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Docker Build') {
             steps {
-                sh 'docker build -t $DOCKER_IMAGE .'
+                sh 'docker build -t $IMAGE_NAME:$TAG .'
             }
         }
 
-        stage('Push Docker Image') {
+        stage('Docker Push') {
             steps {
-                sh 'docker push $DOCKER_IMAGE'
+                withCredentials([string(credentialsId: 'Docker_cred', variable: 'TOKEN')]) {
+                    sh '''
+                    docker login -u surya8442 -p $TOKEN
+                    docker push $IMAGE_NAME:$TAG
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                sh '''
+                docker stop $CONTAINER_NAME || true
+                docker rm $CONTAINER_NAME || true
+                docker run -d -p 8082:8080 --name $CONTAINER_NAME $IMAGE_NAME:$TAG
+                '''
             }
         }
     }
