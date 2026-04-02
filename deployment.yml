@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zeptodeploy
+  labels:
+    app: zepto
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: zepto
+  template:
+    metadata:
+      labels:
+        app: zepto
+    spec:
+      containers:
+      - name: zeptocont
+        image: surya8442/zepto:latest
+        ports:
+        - containerPort: 8080
